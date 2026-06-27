@@ -1,7 +1,36 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'config/theme/app_theme.dart';
+import 'firebase_options.dart';
+import 'config/routes/app_routes.dart';
+import 'package:provider/provider.dart';
+import 'controllers/login_controller.dart';
+import 'controllers/register_controller.dart';
+import 'controllers/event_controller.dart';
 
-void main() {
-  runApp(const CuentasClarasApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  runApp(
+  MultiProvider(
+    providers: [
+      ChangeNotifierProvider(
+        create: (_) => LoginController(),
+      ),
+      ChangeNotifierProvider(
+          create: (_) => RegisterController(), // Añadimos el controlador de registro
+        ),
+      ChangeNotifierProvider(
+          create: (_) => EventController(),
+),
+    ],
+    child: const CuentasClarasApp(),
+  ),
+);
 }
 
 class CuentasClarasApp extends StatelessWidget {
@@ -12,17 +41,9 @@ class CuentasClarasApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Cuentas Claras',
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Cuentas Claras'),
-        ),
-        body: const Center(
-          child: Text(
-            'Bienvenido a Cuentas Claras',
-            style: TextStyle(fontSize: 22),
-          ),
-        ),
-      ),
+      theme: AppTheme.lightTheme,
+      routes: AppRoutes.routes,
+      initialRoute: AppRoutes.splash,
     );
   }
 }
