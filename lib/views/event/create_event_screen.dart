@@ -132,19 +132,31 @@ Widget build(BuildContext context) {
                         return;
                       }
 
-                      await controller.createEvent(
+try {
+  await controller.createEvent(
+    name: _nameController.text.trim(),
+    description: _descriptionController.text.trim(),
+    date: _selectedDate!,
+  );
 
-                        name: _nameController.text.trim(),
+  if (!context.mounted) return;
 
-                        description: _descriptionController.text.trim(),
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text('Evento creado correctamente'),
+    ),
+  );
 
-                        date: _selectedDate!,
+  Navigator.pop(context);
+} catch (e) {
+  if (!context.mounted) return;
 
-                      );
-
-                      if (!context.mounted) return;
-
-                      Navigator.pop(context);
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(e.toString()),
+    ),
+  );
+}
 
                     },
 

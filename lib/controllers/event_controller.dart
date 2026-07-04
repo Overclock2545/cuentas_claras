@@ -11,23 +11,29 @@ class EventController extends ChangeNotifier {
   Stream<List<EventModel>> get events =>
       EventService.getEvents();
 
-  Future<void> createEvent({
-    required String name,
-    required String description,
-    required DateTime date,
-  }) async {
-    try {
-      _isLoading = true;
-      notifyListeners();
+Future<void> createEvent({
+  required String name,
+  required String description,
+  required DateTime date,
+}) async {
+  try {
+    _isLoading = true;
+    notifyListeners();
 
-      await EventService.createEvent(
-        name: name,
-        description: description,
-        date: date,
-      );
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
+    await EventService.createEvent(
+      name: name,
+      description: description,
+      date: date,
+    );
+
+    debugPrint('✅ Evento creado correctamente');
+  } catch (e, stackTrace) {
+    debugPrint('❌ Error al crear evento: $e');
+    debugPrint(stackTrace.toString());
+    rethrow;
+  } finally {
+    _isLoading = false;
+    notifyListeners();
   }
+}
 }

@@ -63,27 +63,17 @@ static Future<void> createEvent({
 
   /// Obtener todos los eventos del usuario
   static Stream<List<EventModel>> getEvents() {
-    final user = _auth.currentUser;
-
-    if (user == null) {
-      return const Stream.empty();
-    }
-
-    return _events
-        .where('creatorId', isEqualTo: user.uid)
-        .orderBy('date')
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-              .map(
-                (doc) => EventModel.fromMap(
-                  doc.id,
-                  doc.data(),
-                ),
-              )
-              .toList(),
-        );
-  }
+  return _events.snapshots().map(
+        (snapshot) => snapshot.docs
+            .map(
+              (doc) => EventModel.fromMap(
+                doc.id,
+                doc.data(),
+              ),
+            )
+            .toList(),
+      );
+}
 
   /// Eliminar un evento
   static Future<void> deleteEvent(String eventId) async {
