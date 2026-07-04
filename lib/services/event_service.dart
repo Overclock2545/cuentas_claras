@@ -61,27 +61,41 @@ static Future<void> createEvent({
   });
 }
 
-  /// Obtener todos los eventos del usuario
+
+/// Obtener únicamente los eventos del usuario autenticado
   static Stream<List<EventModel>> getEvents() {
-  return _events.snapshots().map(
-        (snapshot) => snapshot.docs
-            .map(
-              (doc) => EventModel.fromMap(
-                doc.id,
-                doc.data(),
-              ),
-            )
-            .toList(),
-      );
-}
+    final user = _auth.currentUser;
+
+    // Si no hay sesión iniciada (salvaguarda), devolvemos un flujo vacío
+    if (user == null) {
+      return Stream.value([]);
+    }
+
+    // Filtramos los documentos donde 'creatorId' coincida con el usuario actual
+    return _events
+        .where('creatorId', isEqualTo: user.uid)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map(
+                (doc) => EventModel.fromMap(
+                  doc.id,
+                  doc.data(),
+                ),
+              )
+              .toList(),
+        );
+  }
 
   /// Eliminar un evento
   static Future<void> deleteEvent(String eventId) async {
-    await _events.doc(eventId).delete();
-  }
+  await FirebaseFirestore.instance.collection('events').doc(eventId).delete();
+}
 
   /// Actualizar un evento
   static Future<void> updateEvent(EventModel event) async {
     await _events.doc(event.id).update(event.toMap());
   }
+
+  
 }

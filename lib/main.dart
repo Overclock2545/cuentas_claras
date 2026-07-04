@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'controllers/login_controller.dart';
 import 'controllers/register_controller.dart';
 import 'controllers/event_controller.dart';
+import 'controllers/event_detail_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,7 +27,9 @@ Future<void> main() async {
         ),
       ChangeNotifierProvider(
           create: (_) => EventController(),
-),
+      ),
+      ChangeNotifierProvider(create: (_) => EventDetailController()
+      ),
     ],
     child: const CuentasClarasApp(),
   ),
