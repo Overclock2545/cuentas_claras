@@ -31,12 +31,13 @@ class UserModel {
 
   // Crear un UserModel a partir de un documento de Firestore
   factory UserModel.fromMap(Map<String, dynamic> map, String documentId) {
+    final createdAt = map['createdAt'];
     return UserModel(
       id: documentId,
       name: map['name'] ?? '',
       email: map['email'] ?? '',
       photoUrl: map['photoUrl'],
-      createdAt: (map['createdAt'] as Timestamp).toDate(),
+      createdAt: createdAt is Timestamp ? createdAt.toDate() : DateTime.now(),
       preferredCurrency: map['preferredCurrency'] ?? 'PEN',
     );
   }

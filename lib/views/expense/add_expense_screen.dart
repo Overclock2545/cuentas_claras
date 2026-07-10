@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
-import '../../controllers/event_detail_controller.dart';
 import '../../models/expense_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/expense_service.dart';
-import '../../utils/validators.dart';
 
 class AddExpenseScreen extends StatefulWidget {
   const AddExpenseScreen({super.key});

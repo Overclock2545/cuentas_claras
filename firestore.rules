@@ -1,0 +1,46 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isOwner(eventId) {
+      return signedIn() && get(/databases/$(database)/documents/events/$(eventId)).data.creatorId == request.auth.uid;
+    }
+    function isAcceptedParticipant(eventId) {
+      return signedIn() && get(/databases/$(database)/documents/events/$(eventId)/participants/$(request.auth.uid)).data.status == 'accepted';
+    }
+    function isParticipant(eventId) {
+      return signedIn() && exists(/databases/$(database)/documents/events/$(eventId)/participants/$(request.auth.uid));
+    }
+
+    match /users/{userId} {
+      allow create: if signedIn() && userId == request.auth.uid;
+      // La invitación por correo requiere consultar usuarios registrados.
+      allow read: if signedIn();
+      allow update: if signedIn() && userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    match /events/{eventId} {
+      allow create: if signedIn() && request.resource.data.creatorId == request.auth.uid;
+      allow get: if isOwner(eventId) || isParticipant(eventId);
+      allow list: if signedIn() && resource.data.creatorId == request.auth.uid;
+      allow update, delete: if isOwner(eventId);
+
+      match /participants/{participantId} {
+        allow get, list: if isOwner(eventId)
+            || isAcceptedParticipant(eventId)
+            || (signedIn() && resource.data.id == request.auth.uid);
+        allow create: if isOwner(eventId);
+        allow update: if isOwner(eventId) || (signedIn() && resource.data.id == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'name']));
+        allow delete: if isOwner(eventId) || (signedIn() && resource.data.id == request.auth.uid);
+      }
+
+      match /expenses/{expenseId} {
+        allow read: if isOwner(eventId) || isAcceptedParticipant(eventId);
+        allow create: if isAcceptedParticipant(eventId) && request.resource.data.paidById == request.auth.uid;
+        allow update, delete: if isOwner(eventId) || (isAcceptedParticipant(eventId) && resource.data.paidById == request.auth.uid);
+      }
+    }
+  }
+}

@@ -6,7 +6,8 @@ class AuthService {
   AuthService._();
 
   static final FirebaseAuth _auth = FirebaseAuth.instance;
-  static final FirebaseFirestore _db = FirebaseFirestore.instance; // Instancia estática de Firestore
+  static final FirebaseFirestore _db =
+      FirebaseFirestore.instance; // Instancia estática de Firestore
 
   static User? get currentUser => _auth.currentUser;
 
@@ -25,14 +26,18 @@ class AuthService {
 
   // REGISTRO EXPANDIDO (Guarda también en Firestore)
   static Future<UserCredential> register({
-    required String name, // Añadimos el nombre para guardarlo en la base de datos
+    required String
+        name, // Añadimos el nombre para guardarlo en la base de datos
     required String email,
     required String password,
   }) async {
     try {
+      final normalizedEmail = email.trim().toLowerCase();
+
       // 1. Crear usuario en Firebase Authentication
-      UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
-        email: email,
+      UserCredential userCredential =
+          await _auth.createUserWithEmailAndPassword(
+        email: normalizedEmail,
         password: password,
       );
 
@@ -46,7 +51,7 @@ class AuthService {
         UserModel newUser = UserModel(
           id: firebaseUser.uid,
           name: name,
-          email: email,
+          email: normalizedEmail,
           createdAt: DateTime.now(),
         );
 

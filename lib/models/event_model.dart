@@ -34,13 +34,15 @@ class EventModel {
     String id,
     Map<String, dynamic> map,
   ) {
+    final date = map['date'];
+    final createdAt = map['createdAt'];
     return EventModel(
       id: id,
       name: map['name'] ?? '',
       description: map['description'] ?? '',
-      date: (map['date'] as Timestamp).toDate(),
+      date: date is Timestamp ? date.toDate() : DateTime.now(),
       creatorId: map['creatorId'] ?? '',
-      createdAt: (map['createdAt'] as Timestamp).toDate(),
+      createdAt: createdAt is Timestamp ? createdAt.toDate() : DateTime.now(),
       status: map['status'] ?? 'active',
     );
   }

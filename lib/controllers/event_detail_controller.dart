@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../models/expense_model.dart';
-import '../services/expense_service.dart';
 
 class EventDetailController extends ChangeNotifier {
   List<ExpenseModel> _expenses = [];
@@ -11,9 +10,17 @@ class EventDetailController extends ChangeNotifier {
 
   /// Escucha los gastos y calcula los totales automáticamente
   void setExpenses(List<ExpenseModel> newExpenses) {
+    final newTotal = newExpenses.fold(0.0, (sum, item) => sum + item.amount);
+    final hasChanged =
+        _totalAmount != newTotal || _expenses.length != newExpenses.length;
+
     _expenses = newExpenses;
-    _totalAmount = newExpenses.fold(0.0, (sum, item) => sum + item.amount);
-    // No llamamos a notifyListeners() aquí si se ejecuta durante el build de un StreamBuilder,
-    // pero lo dejamos listo por si extendemos lógica de filtros.
+    _totalAmount = newTotal;
+
+    // La actualización se programa después del build en la vista, por lo que
+    // es seguro notificar para refrescar el total mostrado.
+    if (hasChanged) {
+      notifyListeners();
+    }
   }
 }

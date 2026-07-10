@@ -1,101 +1,285 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../config/routes/app_routes.dart';
 import '../../controllers/event_detail_controller.dart';
 import '../../models/expense_model.dart';
+import '../../models/participant_model.dart';
 import '../../services/expense_service.dart';
-import '../../config/routes/app_routes.dart';
+import '../../services/participant_service.dart';
 
 class EventDetailScreen extends StatelessWidget {
   const EventDetailScreen({super.key});
 
+  // Cuadro de diálogo para invitar a un participante por correo
+  void _showInviteDialog(BuildContext context, String eventId) {
+    final emailController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool isInviting = false;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Invitar Participante'),
+              content: Form(
+                key: formKey,
+                child: TextFormField(
+                  controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(
+                    labelText: 'Correo electrónico',
+                    hintText: 'ejemplo@correo.com',
+                    prefixIcon: Icon(Icons.mail_outline),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Ingresa un correo';
+                    }
+                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                        .hasMatch(value.trim())) {
+                      return 'Ingresa un correo válido';
+                    }
+                    return null;
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed:
+                      isInviting ? null : () => Navigator.pop(dialogContext),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: isInviting
+                      ? null
+                      : () async {
+                          if (!formKey.currentState!.validate()) return;
+
+                          setState(() => isInviting = true);
+                          try {
+                            await ParticipantService.inviteUserByEmail(
+                              eventId: eventId,
+                              email: emailController.text,
+                            );
+                            if (context.mounted) {
+                              Navigator.pop(dialogContext);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content:
+                                        Text('¡Invitación enviada con éxito!')),
+                              );
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              setState(() => isInviting = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text(e
+                                        .toString()
+                                        .replaceAll('Exception: ', ''))),
+                              );
+                            }
+                          }
+                        },
+                  child: isInviting
+                      ? const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Invitar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Recibimos los argumentos enviados desde el HomeScreen (pasaremos un Map con id y nombre)
-    final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+    final args =
+        ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
     final String eventId = args['id'] ?? '';
     final String eventName = args['name'] ?? 'Detalle del Evento';
 
     final detailController = context.watch<EventDetailController>();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(eventName),
-        centerTitle: true,
-      ),
-      body: StreamBuilder<List<ExpenseModel>>(
-        stream: ExpenseService.streamExpenses(eventId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+    return DefaultTabController(
+      length: 2, // Dos pestañas: Gastos y Participantes
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(eventName),
+          centerTitle: true,
+          bottom: const TabBar(
+            tabs: [
+              Tab(icon: Icon(Icons.receipt_long), text: 'Gastos'),
+              Tab(icon: Icon(Icons.people_outline), text: 'Participantes'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            // PESTAÑA 1: GASTOS
+            StreamBuilder<List<ExpenseModel>>(
+              stream: ExpenseService.streamExpenses(eventId),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-          if (snapshot.hasError) {
-            return const Center(child: Text('Error al cargar los gastos'));
-          }
+                final expenses = snapshot.data ?? [];
 
-          final expenses = snapshot.data ?? [];
-          
-          // Sincronizamos los datos con el controlador para cálculos internos
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            context.read<EventDetailController>().setExpenses(expenses);
-          });
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  context.read<EventDetailController>().setExpenses(expenses);
+                });
 
-          return Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // 1. Tarjeta de Balance General
-                _TotalSummaryCard(totalAmount: detailController.totalAmount),
-                const SizedBox(height: 24),
-
-                Text(
-                  'Historial de Gastos',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+                return Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _TotalSummaryCard(
+                          totalAmount: detailController.totalAmount),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Historial de Gastos',
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
                       ),
-                ),
-                const SizedBox(height: 12),
-
-                // 2. Lista de Gastos
-                Expanded(
-                  child: expenses.isEmpty
-                      ? const _EmptyExpensesView()
-                      : _ExpensesList(expenses: expenses),
-                ),
-              ],
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: expenses.isEmpty
+                            ? const _EmptyExpensesView()
+                            : _ExpensesList(expenses: expenses),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
-          );
-        },
-      ),
-      // Botón flotante para registrar un nuevo gasto más adelante
-// Botón flotante para registrar un nuevo gasto
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.pushNamed(
-            context,
-            AppRoutes.addExpense,
-            arguments: eventId, // Pasamos el ID del evento actual como argumento directo
-          );
-        },
-        icon: const Icon(Icons.add_card),
-        label: const Text('Agregar Gasto'),
+
+            // PESTAÑA 2: PARTICIPANTES
+            StreamBuilder<List<ParticipantModel>>(
+              stream: ParticipantService.streamParticipants(eventId),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final participants = snapshot.data ?? [];
+
+                if (participants.isEmpty) {
+                  return const Center(
+                      child: Text('No hay participantes asignados.'));
+                }
+
+                return ListView.separated(
+                  padding: const EdgeInsets.all(20),
+                  itemCount: participants.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final p = participants[index];
+                    return Card(
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(
+                            color: Theme.of(context)
+                                .dividerColor
+                                .withValues(alpha: 0.1)),
+                      ),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          child: Text(
+                            p.name.trim().isNotEmpty
+                                ? p.name.trim().substring(0, 1).toUpperCase()
+                                : 'P', // 'P' por defecto si el nombre está vacío
+                          ),
+                        ),
+                        title: Text(p.name,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: Text(p.email),
+                        trailing: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: p.status == 'accepted'
+                                ? Colors.green.withValues(alpha: 0.1)
+                                : Colors.orange.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            p.status == 'accepted' ? 'Aceptado' : 'Pendiente',
+                            style: TextStyle(
+                              color: p.status == 'accepted'
+                                  ? Colors.green
+                                  : Colors.orange,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ],
+        ),
+
+        // Menú flotante expandible sencillo usando un Builder para saber en qué pestaña estamos
+        floatingActionButton: Builder(
+          builder: (tabContext) {
+            final tabController = DefaultTabController.of(tabContext);
+
+            return AnimatedBuilder(
+              animation: tabController,
+              builder: (context, _) {
+                final tabIndex = tabController.index;
+                return FloatingActionButton.extended(
+                  onPressed: () {
+                    // En gastos se registra un gasto; en participantes se envía una invitación.
+                    if (tabIndex == 0) {
+                      Navigator.pushNamed(
+                        context,
+                        AppRoutes.addExpense,
+                        arguments: eventId,
+                      );
+                    } else {
+                      _showInviteDialog(context, eventId);
+                    }
+                  },
+                  icon: const Icon(Icons.add),
+                  label: Text(tabIndex == 0 ? 'Añadir gasto' : 'Invitar'),
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }
 }
 
+// Mantenemos los widgets privados que ya tenías abajo (_TotalSummaryCard, _ExpensesList, _EmptyExpensesView)
 class _TotalSummaryCard extends StatelessWidget {
   final double totalAmount;
-
   const _TotalSummaryCard({required this.totalAmount});
 
   @override
   Widget build(BuildContext context) {
     return Card(
       elevation: 0,
-      color: Theme.of(context).colorScheme.primaryContainer.withAlpha((0.4 * 255).round()),
+      color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.4),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(24.0),
@@ -112,7 +296,7 @@ class _TotalSummaryCard extends StatelessWidget {
               'S/ ${totalAmount.toStringAsFixed(2)}',
               style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                     fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.primary, // Tu color #18B58A
+                    color: Theme.of(context).colorScheme.primary,
                   ),
             ),
           ],
@@ -124,38 +308,36 @@ class _TotalSummaryCard extends StatelessWidget {
 
 class _ExpensesList extends StatelessWidget {
   final List<ExpenseModel> expenses;
-
   const _ExpensesList({required this.expenses});
 
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: expenses.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 10),
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, index) {
         final expense = expenses[index];
         return Card(
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: Theme.of(context).dividerColor.withAlpha((0.1 * 255).round())),
+            side: BorderSide(
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.1)),
           ),
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+              backgroundColor:
+                  Theme.of(context).colorScheme.surfaceContainerHighest,
               child: const Icon(Icons.monetization_on_outlined),
             ),
-            title: Text(
-              expense.title,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
+            title: Text(expense.title,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
             subtitle: Text('Pagado por: ${expense.paidByName}'),
             trailing: Text(
               'S/ ${expense.amount.toStringAsFixed(2)}',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
           ),
         );
@@ -173,16 +355,12 @@ class _EmptyExpensesView extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.receipt_long_outlined, size: 64, color: Colors.grey.shade400),
+          Icon(Icons.receipt_long_outlined,
+              size: 64, color: Colors.grey.shade400),
           const SizedBox(height: 12),
-          Text(
-            'Aún no hay gastos registrados',
-            style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w500),
-          ),
-          const Text(
-            'Presiona el botón de abajo para añadir el primero.',
-            style: TextStyle(color: Colors.grey, fontSize: 12),
-          ),
+          Text('Aún no hay gastos registrados',
+              style: TextStyle(
+                  color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
         ],
       ),
     );
