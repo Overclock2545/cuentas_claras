@@ -23,16 +23,25 @@ service cloud.firestore {
 
     match /events/{eventId} {
       allow create: if signedIn() && request.resource.data.creatorId == request.auth.uid;
+      allow list: if signedIn();  // ✅ IMPORTANTE: Permite hacer queries/where en eventos
       allow get: if isOwner(eventId) || isParticipant(eventId);
-      allow list: if signedIn() && resource.data.creatorId == request.auth.uid;
       allow update, delete: if isOwner(eventId);
 
       match /participants/{participantId} {
-        allow get, list: if isOwner(eventId)
+        // ✅ FIX: Permitir list en collectionGroup
+        // collectionGroup no tiene contexto de eventId, así que validamos el documento directamente
+        allow list: if signedIn() && resource.data.id == request.auth.uid;
+        
+        allow get: if isOwner(eventId)
             || isAcceptedParticipant(eventId)
             || (signedIn() && resource.data.id == request.auth.uid);
-        allow create: if isOwner(eventId);
-        allow update: if isOwner(eventId) || (signedIn() && resource.data.id == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'name']));
+        
+        // ✅ FIX: Permitir que el admin del evento cree participantes (independiente del ID)
+        // Esto permite que el admin invitar a otros usuarios
+        allow create: if isOwner(eventId) || (signedIn() && request.resource.data.id == request.auth.uid);
+        
+        allow update: if isOwner(eventId) || (signedIn() && participantId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'name']));
+        
         allow delete: if isOwner(eventId) || (signedIn() && resource.data.id == request.auth.uid);
       }
 

@@ -12,8 +12,13 @@ import 'package:cuentas_claras/main.dart';
 void main() {
   testWidgets('renders the application splash screen',
       (WidgetTester tester) async {
-    await tester.pumpWidget(const CuentasClarasApp());
+    await tester.pumpWidget(buildApp());
 
-    expect(find.text('Cuentas Claras'), findsOneWidget);
+    // Wait for the splash screen timer to finish
+    await tester.pumpAndSettle();
+
+    // After the splash screen, the app should navigate to the login screen
+    // because the user is not logged in.
+    expect(find.text('¡Bienvenido!'), findsOneWidget);
   });
 }

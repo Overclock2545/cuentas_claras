@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import '../../config/routes/app_routes.dart';
 import '../../controllers/event_controller.dart';
 import '../../models/event_model.dart';
-import '../../services/auth_service.dart';
 import '../../services/event_service.dart';
+import '../../services/service_locator.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -22,7 +22,7 @@ class HomeScreen extends StatelessWidget {
             icon: const Icon(Icons.logout_rounded, color: Colors.redAccent),
             tooltip: 'Cerrar Sesión',
             onPressed: () async {
-              await AuthService.signOut();
+              await authService.signOut();
               if (context.mounted) {
                 Navigator.pushNamedAndRemoveUntil(
                   context,
@@ -173,6 +173,16 @@ class HomeScreen extends StatelessWidget {
                     ));
                   }
 
+                  if (snapshot.hasError) {
+                    return const _InvitationStatusCard(
+                      icon: Icons.error_outline,
+                      title: 'No se pudieron cargar los eventos',
+                      message:
+                          'Revisa la conexión con Firestore o las reglas de seguridad.',
+                      color: Colors.red,
+                    );
+                  }
+
                   final events = snapshot.data ?? [];
 
                   if (events.isEmpty) {
@@ -196,7 +206,7 @@ class HomeScreen extends StatelessWidget {
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: events.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
                     itemBuilder: (context, index) {
                       final event = events[index];
                       return Card(
@@ -206,7 +216,7 @@ class HomeScreen extends StatelessWidget {
                           side: BorderSide(
                               color: Theme.of(context)
                                   .dividerColor
-                                  .withOpacity(0.1)),
+                                  .withValues(alpha: 0.1)),
                         ),
                         child: ListTile(
                           title: Text(event.name,
@@ -313,10 +323,10 @@ class _InvitationStatusCard extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 20),
       child: Card(
         elevation: 0,
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: color.withOpacity(0.25)),
+          side: BorderSide(color: color.withValues(alpha: 0.25)),
         ),
         child: ListTile(
           leading: Icon(icon, color: color),

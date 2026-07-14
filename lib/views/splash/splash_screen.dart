@@ -1,9 +1,9 @@
+import 'package:cuentas_claras/services/service_locator.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../config/constants/app_assets.dart';
 import '../../config/routes/app_routes.dart';
-import '../../services/auth_service.dart'; // Tu servicio estático
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -27,7 +27,7 @@ class _SplashScreenState extends State<SplashScreen> {
     if (!mounted) return;
 
     // 1. Cumplimos Regla #2: Usar el servicio estático en lugar de llamar directo a Firebase SDK
-    final user = AuthService.currentUser;
+    final user = authService.currentUser;
 
     // 2. Cumplimos Regla de Navegación: Usar rutas nombradas centralizadas
     if (user == null) {
@@ -36,6 +36,7 @@ class _SplashScreenState extends State<SplashScreen> {
       Navigator.pushReplacementNamed(context, AppRoutes.home);
     }
   }
+
 
   @override
   Widget build(BuildContext context) {

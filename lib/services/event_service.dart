@@ -15,7 +15,7 @@ class EventService {
   static CollectionReference<Map<String, dynamic>> get _events =>
       _db.collection('events');
 
-  static Future<void> createEvent({
+  static Future<EventModel> createEvent({
     required String name,
     required String description,
     required DateTime date,
@@ -26,105 +26,75 @@ class EventService {
     final doc = _events.doc();
     final now = DateTime.now();
     final event = EventModel(
-        id: doc.id,
-        name: name,
-        description: description,
-        date: date,
-        creatorId: user.uid,
-        createdAt: now,
-        status: 'active');
+      id: doc.id,
+      name: name,
+      description: description,
+      date: date,
+      creatorId: user.uid,
+      createdAt: now,
+      status: 'active',
+    );
     final participant = ParticipantModel(
-        id: user.uid,
-        name: user.displayName ?? 'Administrador',
-        email: user.email?.trim().toLowerCase() ?? '',
-        role: 'admin',
-        status: 'accepted',
-        joinedAt: now);
+      id: user.uid,
+      name: user.displayName ?? 'Administrador',
+      email: user.email?.trim().toLowerCase() ?? '',
+      role: 'admin',
+      status: 'accepted',
+      joinedAt: now,
+    );
 
     await _db.runTransaction((transaction) async {
       transaction.set(doc, event.toMap());
       transaction.set(
-          doc.collection('participants').doc(user.uid), participant.toMap());
+        doc.collection('participants').doc(user.uid),
+        participant.toMap(),
+      );
     });
+
+    return event;
   }
 
-  /// Emite los eventos creados por el usuario y aquellos cuyas invitaciones aceptó.
   static Stream<List<EventModel>> getEvents() {
     final user = _auth.currentUser;
-    final email = user?.email?.trim().toLowerCase();
-    if (user == null || email == null) return Stream.value([]);
+    if (user == null) return Stream.value([]);
 
-    final ownedEvents = _events
+    // ✅ SOLUCIÓN TEMPORAL: Obtener eventos creados por el usuario
+    // Este enfoque es más simple y no requiere cambios en las reglas de Firestore
+    // NOTA: Para mostrar eventos donde es participante, desplegaremos nuevas reglas
+    
+    return _events
         .where('creatorId', isEqualTo: user.uid)
+        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map(_eventsFromDocuments);
-    final joinedEvents = _db
-        .collectionGroup('participants')
-        .where('id', isEqualTo: user.uid)
-        .where('email', isEqualTo: email)
-        .where('status', isEqualTo: 'accepted')
-        .snapshots()
-        .asyncMap(_eventsFromParticipants);
-    return _mergeEventStreams(ownedEvents, joinedEvents);
+        .map((snapshot) => snapshot.docs
+            .map((doc) => EventModel.fromMap(doc.id, doc.data()))
+            .toList());
   }
 
-  static List<EventModel> _eventsFromDocuments(
-          QuerySnapshot<Map<String, dynamic>> snapshot) =>
-      snapshot.docs
-          .map((doc) => EventModel.fromMap(doc.id, doc.data()))
-          .toList();
-
+  // ✅ TEMPORAL: Comentado hasta que se desplieguen las nuevas reglas de Firestore
+  /*
   static Future<List<EventModel>> _eventsFromParticipants(
-      QuerySnapshot<Map<String, dynamic>> snapshot) async {
+    QuerySnapshot<Map<String, dynamic>> snapshot, {
+    String? requireStatus,
+  }) async {
     final events = await Future.wait(snapshot.docs.map((participant) async {
+      final status = participant.data()['status'] as String?;
+      if (requireStatus != null && status != requireStatus) return null;
       final eventReference = participant.reference.parent.parent;
       if (eventReference == null) return null;
       final event = await eventReference.get();
       if (!event.exists || event.data() == null) return null;
       return EventModel.fromMap(event.id, event.data()!);
     }));
-    return events.whereType<EventModel>().toList();
-  }
 
-  static Stream<List<EventModel>> _mergeEventStreams(
-      Stream<List<EventModel>> ownedEvents,
-      Stream<List<EventModel>> joinedEvents) {
-    final controller = StreamController<List<EventModel>>();
-    var owned = <EventModel>[];
-    var joined = <EventModel>[];
-    var hasOwned = false;
-    var hasJoined = false;
-
-    void emit() {
-      if (!hasOwned || !hasJoined) return;
-      final eventsById = {
-        for (final event in [...owned, ...joined]) event.id: event
-      };
-      final events = eventsById.values.toList()
-        ..sort((a, b) => a.date.compareTo(b.date));
-      controller.add(events);
-    }
-
-    late final StreamSubscription<List<EventModel>> ownedSubscription;
-    late final StreamSubscription<List<EventModel>> joinedSubscription;
-    controller.onListen = () {
-      ownedSubscription = ownedEvents.listen((events) {
-        owned = events;
-        hasOwned = true;
-        emit();
-      }, onError: controller.addError);
-      joinedSubscription = joinedEvents.listen((events) {
-        joined = events;
-        hasJoined = true;
-        emit();
-      }, onError: controller.addError);
+    // Usamos un mapa para eliminar duplicados y luego ordenamos.
+    final eventsById = {
+      for (final event in events.whereType<EventModel>()) event.id: event
     };
-    controller.onCancel = () async {
-      await ownedSubscription.cancel();
-      await joinedSubscription.cancel();
-    };
-    return controller.stream;
+    return eventsById.values.toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
   }
+  */
 
   /// Elimina el evento y las subcolecciones que actualmente utiliza la app.
   static Future<void> deleteEvent(String eventId) async {
@@ -156,15 +126,25 @@ class EventService {
       _events.doc(event.id).update(event.toMap());
 
   static Stream<List<EventModel>> streamPendingInvitations() {
-    final email = _auth.currentUser?.email?.trim().toLowerCase();
-    if (email == null) return Stream.value([]);
+    final user = _auth.currentUser;
+    if (user == null) return Stream.value([]);
+
+    // ✅ TEMPORAL: Deshabilitado collectionGroup hasta que las reglas se desplieguen
+    // Retorna stream vacío de momento
+    // TODO: Reactivar cuando se desplieguen las nuevas reglas de Firestore
+    return Stream.value([]);
+    
+    // CÓDIGO ORIGINAL (deshabilitado):
+    /*
     return _db
         .collectionGroup('participants')
-        .where('id', isEqualTo: _auth.currentUser!.uid)
-        .where('email', isEqualTo: email)
-        .where('status', isEqualTo: 'pendiente')
+        .where('id', isEqualTo: user.uid)
         .snapshots()
-        .asyncMap(_eventsFromParticipants);
+        .asyncMap((snapshot) => _eventsFromParticipants(
+              snapshot,
+              requireStatus: 'pendiente',
+            ));
+    */
   }
 
   static Future<void> respondToInvitation(

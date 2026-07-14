@@ -1,6 +1,6 @@
+import 'package:cuentas_claras/services/service_locator.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../services/auth_service.dart';
 import '../config/routes/app_routes.dart';
 
 /// Controla el formulario y la autenticación del Login
@@ -29,7 +29,7 @@ class LoginController extends ChangeNotifier {
     try {
       setLoading(true);
 
-      await AuthService.login(
+      await authService.login(
         email: emailController.text.trim(),
         password: passwordController.text,
       );

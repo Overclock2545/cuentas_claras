@@ -1,6 +1,6 @@
+import 'package:cuentas_claras/services/service_locator.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../services/auth_service.dart';
 import '../config/routes/app_routes.dart';
 
 class RegisterController extends ChangeNotifier {
@@ -29,7 +29,7 @@ class RegisterController extends ChangeNotifier {
       setLoading(true);
 
       // Usamos el AuthService estático que configuramos con el guardado en Firestore
-      await AuthService.register(
+      await authService.register(
         name: nameController.text.trim(),
         email: emailController.text.trim(),
         password: passwordController.text,

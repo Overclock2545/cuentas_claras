@@ -3,73 +3,99 @@ import 'package:cloud_firestore/cloud_firestore.dart'; // Importante para usar T
 import '../models/user_model.dart';
 
 class AuthService {
-  AuthService._();
+  final FirebaseAuth? auth;
+  final FirebaseFirestore? db;
 
-  static final FirebaseAuth _auth = FirebaseAuth.instance;
-  static final FirebaseFirestore _db =
-      FirebaseFirestore.instance; // Instancia estática de Firestore
+  AuthService({this.auth, this.db});
 
-  static User? get currentUser => _auth.currentUser;
+  User? get currentUser {
+    try {
+      return auth?.currentUser ?? FirebaseAuth.instance.currentUser;
+    } on FirebaseException catch (_) {
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
 
-  static Stream<User?> get authStateChanges => _auth.authStateChanges();
+  Stream<User?> get authStateChanges {
+    try {
+      return auth?.authStateChanges() ?? FirebaseAuth.instance.authStateChanges();
+    } on FirebaseException catch (_) {
+      return const Stream.empty();
+    } catch (_) {
+      return const Stream.empty();
+    }
+  }
 
   // INICIO DE SESIÓN
-  static Future<UserCredential> login({
+  Future<UserCredential> login({
     required String email,
     required String password,
-  }) {
-    return _auth.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
+  }) async {
+    try {
+      final authInstance = auth ?? FirebaseAuth.instance;
+      return authInstance.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+    } on FirebaseException catch (_) {
+      rethrow;
+    } catch (_) {
+      rethrow;
+    }
   }
 
   // REGISTRO EXPANDIDO (Guarda también en Firestore)
-  static Future<UserCredential> register({
-    required String
-        name, // Añadimos el nombre para guardarlo en la base de datos
+  Future<UserCredential> register({
+    required String name,
     required String email,
     required String password,
   }) async {
     try {
       final normalizedEmail = email.trim().toLowerCase();
+      final authInstance = auth ?? FirebaseAuth.instance;
+      final dbInstance = db ?? FirebaseFirestore.instance;
 
       // 1. Crear usuario en Firebase Authentication
-      UserCredential userCredential =
-          await _auth.createUserWithEmailAndPassword(
+      final userCredential = await authInstance.createUserWithEmailAndPassword(
         email: normalizedEmail,
         password: password,
       );
 
-      final User? firebaseUser = userCredential.user;
+      final firebaseUser = userCredential.user;
 
       if (firebaseUser != null) {
-        // Actualizar el nombre en el perfil nativo de Firebase Auth
         await firebaseUser.updateDisplayName(name);
 
-        // 2. Crear el modelo con los datos del usuario para Firestore
-        UserModel newUser = UserModel(
+        final newUser = UserModel(
           id: firebaseUser.uid,
           name: name,
           email: normalizedEmail,
           createdAt: DateTime.now(),
         );
 
-        // 3. Guardar el documento en la colección 'users' usando el UID como ID del documento
-        await _db.collection('users').doc(newUser.id).set(
+        await dbInstance.collection('users').doc(newUser.id).set(
               newUser.toMap(),
               SetOptions(merge: true),
             );
       }
 
       return userCredential;
-    } catch (e) {
-      rethrow; // Delegamos el manejo del error al controlador de la pantalla
+    } catch (_) {
+      rethrow;
     }
   }
 
   // CERRAR SESIÓN
-  static Future<void> signOut() {
-    return _auth.signOut();
+  Future<void> signOut() async {
+    try {
+      await (auth ?? FirebaseAuth.instance).signOut();
+    } on FirebaseException catch (_) {
+      return;
+    } catch (_) {
+      return;
+    }
   }
 }
+

@@ -1,7 +1,8 @@
+import 'package:cuentas_claras/services/service_locator.dart';
 import 'package:flutter/material.dart';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/expense_model.dart';
-import '../../services/auth_service.dart';
 import '../../services/expense_service.dart';
 
 class AddExpenseScreen extends StatefulWidget {
@@ -30,8 +31,13 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     setState(() => _isSaving = true);
 
     try {
-      final currentUser = AuthService.currentUser;
+      final currentUser = authService.currentUser;
       if (currentUser == null) throw Exception('Usuario no identificado');
+
+      // Obtenemos el documento del usuario desde Firestore para asegurar el nombre más reciente
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(currentUser.uid).get();
+      final paidByName = userDoc.data()?['name'] ?? currentUser.displayName ?? 'Participante';
+
 
       final newExpense = ExpenseModel(
         id: '', // El servicio generará el ID automáticamente
@@ -39,8 +45,7 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         title: _titleController.text.trim(),
         amount: double.parse(_amountController.text.trim()),
         paidById: currentUser.uid,
-        // Usamos el displayName si existe, de lo contrario su correo como salvaguarda
-        paidByName: currentUser.displayName ?? currentUser.email ?? 'Participante',
+        paidByName: paidByName,
         createdAt: DateTime.now(),
       );
 

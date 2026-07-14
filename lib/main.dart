@@ -16,24 +16,27 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  runApp(
-  MultiProvider(
+  runApp(buildApp());
+}
+
+Widget buildApp() {
+  return MultiProvider(
     providers: [
       ChangeNotifierProvider(
         create: (_) => LoginController(),
       ),
       ChangeNotifierProvider(
-          create: (_) => RegisterController(), // Añadimos el controlador de registro
-        ),
-      ChangeNotifierProvider(
-          create: (_) => EventController(),
+        create: (_) => RegisterController(),
       ),
-      ChangeNotifierProvider(create: (_) => EventDetailController()
+      ChangeNotifierProvider(
+        create: (_) => EventController(),
+      ),
+      ChangeNotifierProvider(
+        create: (_) => EventDetailController(),
       ),
     ],
     child: const CuentasClarasApp(),
-  ),
-);
+  );
 }
 
 class CuentasClarasApp extends StatelessWidget {
