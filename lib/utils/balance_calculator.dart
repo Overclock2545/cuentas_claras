@@ -1,6 +1,7 @@
 import '../models/debt_model.dart';
 import '../models/expense_model.dart';
 import '../models/participant_model.dart';
+import '../models/settlement_model.dart';
 
 /// Calcula balances y deudas a partir de los gastos de un evento.
 ///
@@ -9,15 +10,23 @@ import '../models/participant_model.dart';
 /// (`splits`), así que el balance y las deudas se derivan siempre en el
 /// cliente. Esto evita tener una colección "debts" que se pueda
 /// desincronizar de los gastos reales.
+///
+/// Las liquidaciones (pagos registrados entre participantes) se restan
+/// del balance: quien paga (fromId) reduce su deuda, y quien recibe (toId)
+/// reduce su crédito.
 class BalanceCalculator {
   BalanceCalculator._();
 
   /// Balance neto de cada participante.
   /// Positivo = le deben plata (pagó más de lo que le correspondía).
   /// Negativo = debe plata (le correspondía pagar más de lo que pagó).
+  ///
+  /// [settlements] es opcional. Si se proporciona, las liquidaciones
+  /// confirmadas se descuentan del balance.
   static Map<String, double> calculateBalances({
     required List<ExpenseModel> expenses,
     required List<ParticipantModel> participants,
+    List<SettlementModel> settlements = const [],
   }) {
     final balances = {for (final p in participants) p.id: 0.0};
 
@@ -28,6 +37,18 @@ class BalanceCalculator {
         balances[split.participantId] =
             (balances[split.participantId] ?? 0) - split.amount;
       }
+    }
+
+    // Aplicar liquidaciones confirmadas: quien paga (fromId) reduce su
+    // deuda (su balance se vuelve más positivo o menos negativo), y quien
+    // recibe (toId) reduce su crédito (su balance se vuelve más negativo
+    // o menos positivo).
+    for (final settlement in settlements) {
+      if (settlement.status != 'confirmed') continue;
+      balances[settlement.fromId] =
+          (balances[settlement.fromId] ?? 0) + settlement.amount;
+      balances[settlement.toId] =
+          (balances[settlement.toId] ?? 0) - settlement.amount;
     }
 
     // Redondeamos a centavos para no arrastrar errores de punto flotante.

@@ -195,7 +195,7 @@ class EventService {
       throw Exception('No tienes permiso para eliminar este evento.');
     }
 
-    for (final subcollection in ['participants', 'expenses']) {
+    for (final subcollection in ['participants', 'expenses', 'settlements']) {
       final documents = await eventReference.collection(subcollection).get();
       for (var start = 0; start < documents.docs.length; start += 500) {
         final batch = _db.batch();

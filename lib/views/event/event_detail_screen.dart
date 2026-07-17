@@ -2,12 +2,11 @@ import 'package:cuentas_claras/utils/color_extensions.dart';
 import 'package:flutter/material.dart';
 
 import '../../config/routes/app_routes.dart';
-import '../../models/debt_model.dart';
 import '../../models/expense_model.dart';
 import '../../models/participant_model.dart';
 import '../../services/expense_service.dart';
 import '../../services/participant_service.dart';
-import '../../utils/balance_calculator.dart';
+import '../home/settle_screen.dart';
 
 class EventDetailScreen extends StatefulWidget {
   const EventDetailScreen({super.key});
@@ -27,23 +26,11 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   late final Stream<List<ExpenseModel>> _expensesStream;
   late final Stream<List<ParticipantModel>> _participantsStream;
 
-  // ✅ FIX (pestaña Deudas): NO reutilizamos _expensesStream/_participantsStream
-  // aquí. Un mismo Stream de Firestore solo entrega su snapshot inicial al
-  // primer StreamBuilder que se suscribe; un segundo StreamBuilder que se
-  // suscribe al MISMO Stream (como haría la pestaña de Deudas si reutilizara
-  // estos) solo recibe eventos futuros, así que se queda esperando para
-  // siempre si nada cambia en Firestore. Por eso la pestaña de Deudas tiene
-  // sus propias instancias, cada una con su propio listener de Firestore.
-  late final Stream<List<ExpenseModel>> _debtsExpensesStream;
-  late final Stream<List<ParticipantModel>> _debtsParticipantsStream;
-
   void _ensureStreamsInitialized(String eventId) {
     if (_eventId == eventId) return;
     _eventId = eventId;
     _expensesStream = ExpenseService.streamExpenses(eventId);
     _participantsStream = ParticipantService.streamParticipants(eventId);
-    _debtsExpensesStream = ExpenseService.streamExpenses(eventId);
-    _debtsParticipantsStream = ParticipantService.streamParticipants(eventId);
   }
 
   // ✅ FIX 2.3: Cuadro de diálogo mejorado para invitar con mejor feedback de errores
@@ -189,7 +176,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     _ensureStreamsInitialized(eventId);
 
     return DefaultTabController(
-      length: 3, // Tres pestañas: Gastos, Participantes y Deudas
+      length: 3, // Tres pestañas: Gastos, Participantes y Liquidaciones
       child: Scaffold(
         appBar: AppBar(
           title: Text(eventName),
@@ -198,7 +185,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             tabs: [
               Tab(icon: Icon(Icons.receipt_long), text: 'Gastos'),
               Tab(icon: Icon(Icons.people_outline), text: 'Participantes'),
-              Tab(icon: Icon(Icons.account_balance_wallet_outlined), text: 'Deudas'),
+              Tab(icon: Icon(Icons.account_balance_wallet_outlined), text: 'Liquidaciones'),
             ],
           ),
         ),
@@ -311,55 +298,8 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               },
             ),
 
-            // PESTAÑA 3: DEUDAS
-            StreamBuilder<List<ExpenseModel>>(
-              stream: _debtsExpensesStream,
-              builder: (context, expensesSnapshot) {
-                return StreamBuilder<List<ParticipantModel>>(
-                  stream: _debtsParticipantsStream,
-                  builder: (context, participantsSnapshot) {
-                    if (expensesSnapshot.connectionState ==
-                            ConnectionState.waiting ||
-                        participantsSnapshot.connectionState ==
-                            ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-
-                    final expenses = expensesSnapshot.data ?? [];
-                    final participants = (participantsSnapshot.data ?? [])
-                        .where((p) => p.status == 'accepted')
-                        .toList();
-
-                    if (expenses.isEmpty || participants.isEmpty) {
-                      return const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Text(
-                            'Aún no hay gastos registrados para calcular deudas.',
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      );
-                    }
-
-                    final balances = BalanceCalculator.calculateBalances(
-                      expenses: expenses,
-                      participants: participants,
-                    );
-                    final debts = BalanceCalculator.simplifyDebts(
-                      balances: balances,
-                      participants: participants,
-                    );
-
-                    return _DebtsTab(
-                      participants: participants,
-                      balances: balances,
-                      debts: debts,
-                    );
-                  },
-                );
-              },
-            ),
+            // PESTAÑA 3: LIQUIDACIONES (Deudas + Pagos)
+            SettleScreen(eventId: eventId),
           ],
         ),
 
@@ -638,110 +578,3 @@ class _EmptyExpensesView extends StatelessWidget {
   }
 }
 
-/// PESTAÑA 3: muestra el balance individual de cada participante (cuánto
-/// le deben o cuánto debe) y la lista simplificada de pagos que saldarían
-/// todas las deudas del evento con el menor número de transacciones.
-class _DebtsTab extends StatelessWidget {
-  final List<ParticipantModel> participants;
-  final Map<String, double> balances;
-  final List<DebtModel> debts;
-
-  const _DebtsTab({
-    required this.participants,
-    required this.balances,
-    required this.debts,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final namesById = {for (final p in participants) p.id: p.name};
-
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Text(
-          'Balance individual',
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        ...balances.entries.map((entry) {
-          final name = namesById[entry.key] ?? 'Participante';
-          final value = entry.value;
-          final isSettled = value.abs() <= 0.01;
-          final color = isSettled
-              ? Colors.grey
-              : (value > 0 ? Colors.green : Colors.red);
-          final label = isSettled
-              ? 'Está al día'
-              : (value > 0
-                  ? 'Le deben S/ ${value.toStringAsFixed(2)}'
-                  : 'Debe S/ ${value.abs().toStringAsFixed(2)}');
-
-          return Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(
-                  color: Theme.of(context).dividerColor.withOpacityValue(0.1)),
-            ),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: color.withOpacityValue(0.1),
-                child: Icon(
-                  isSettled
-                      ? Icons.check
-                      : (value > 0 ? Icons.arrow_downward : Icons.arrow_upward),
-                  color: color,
-                ),
-              ),
-              title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-              trailing: Text(
-                label,
-                style: TextStyle(color: color, fontWeight: FontWeight.bold),
-              ),
-            ),
-          );
-        }),
-        const SizedBox(height: 28),
-        Text(
-          'Cómo saldar cuentas',
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        if (debts.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              '¡Todas las cuentas están saldadas! 🎉',
-              style: TextStyle(color: Colors.grey.shade600),
-            ),
-          )
-        else
-          ...debts.map(
-            (debt) => Card(
-              elevation: 0,
-              color: Theme.of(context)
-                  .colorScheme
-                  .primaryContainer
-                  .withOpacityValue(0.3),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: ListTile(
-                leading: const Icon(Icons.sync_alt),
-                title: Text('${debt.fromName} le debe a ${debt.toName}'),
-                trailing: Text(
-                  'S/ ${debt.amount.toStringAsFixed(2)}',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
