@@ -19,18 +19,14 @@ class HomeScreen extends StatelessWidget {
         title: const Text('Cuentas Claras'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.person_outline),
+            tooltip: 'Mi Perfil',
+            onPressed: () => Navigator.pushNamed(context, AppRoutes.profile),
+          ),
+          IconButton(
             icon: const Icon(Icons.logout_rounded, color: Colors.redAccent),
             tooltip: 'Cerrar Sesión',
-            onPressed: () async {
-              await authService.signOut();
-              if (context.mounted) {
-                Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  AppRoutes.login,
-                  (route) => false,
-                );
-              }
-            },
+            onPressed: () => _confirmLogout(context),
           ),
         ],
       ),
@@ -249,6 +245,36 @@ class HomeScreen extends StatelessWidget {
       floatingActionButton: FloatingActionButton(
         onPressed: () => Navigator.pushNamed(context, AppRoutes.createEvent),
         child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  void _confirmLogout(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cerrar sesión'),
+        content: const Text('¿Estás seguro de que quieres cerrar sesión?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await authService.signOut();
+              if (context.mounted) {
+                Navigator.pushNamedAndRemoveUntil(
+                  context,
+                  AppRoutes.login,
+                  (route) => false,
+                );
+              }
+            },
+            child: const Text('Cerrar sesión', style: TextStyle(color: Colors.red)),
+          ),
+        ],
       ),
     );
   }

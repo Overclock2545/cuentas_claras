@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -151,7 +152,7 @@ class _EmailForm extends StatelessWidget {
         Align(
           alignment: Alignment.centerRight,
           child: TextButton(
-            onPressed: () {},
+            onPressed: () => _showForgotPasswordDialog(context),
             child: const Text('¿Olvidaste tu contraseña?'),
           ),
         ),
@@ -195,4 +196,97 @@ class _FooterSection extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Muestra un diálogo para recuperar contraseña mediante Firebase Auth.
+void _showForgotPasswordDialog(BuildContext context) {
+  final emailController = TextEditingController();
+  final formKey = GlobalKey<FormState>();
+  bool isSending = false;
+
+  showDialog(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text('Recuperar contraseña'),
+            content: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Ingresa tu correo electrónico y te enviaremos un enlace para restablecer tu contraseña.',
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    enabled: !isSending,
+                    decoration: const InputDecoration(
+                      labelText: 'Correo electrónico',
+                      prefixIcon: Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: Validators.email,
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSending ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: isSending
+                    ? null
+                    : () async {
+                        if (!formKey.currentState!.validate()) return;
+
+                        setState(() => isSending = true);
+
+                        try {
+                          await FirebaseAuth.instance.sendPasswordResetEmail(
+                            email: emailController.text.trim(),
+                          );
+                          if (context.mounted) {
+                            Navigator.pop(dialogContext);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('📩 Revisa tu correo. Te hemos enviado un enlace para restablecer tu contraseña.'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
+                        } on FirebaseAuthException catch (e) {
+                          if (context.mounted) {
+                            setState(() => isSending = false);
+                            String message = 'Ocurrió un error';
+                            if (e.code == 'user-not-found') {
+                              message = 'No existe una cuenta con ese correo.';
+                            } else if (e.code == 'invalid-email') {
+                              message = 'Correo inválido.';
+                            }
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(message)),
+                            );
+                          }
+                        }
+                      },
+                child: isSending
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Enviar enlace'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
 }

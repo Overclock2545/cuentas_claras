@@ -7,6 +7,7 @@ import '../../views/event/create_event_screen.dart';
 import '../../views/splash/splash_screen.dart';
 import '../../views/event/event_detail_screen.dart';
 import '../../views/expense/add_expense_screen.dart';
+import '../../views/profile/profile_screen.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -32,7 +33,7 @@ class AppRoutes {
         AppRoutes.eventDetail: (context) => const EventDetailScreen(),
 //        expenses: (_) => const ExpensesScreen(),
 //        summary: (_) => const SummaryScreen(),
-//        profile: (_) => const ProfileScreen(),
+        profile: (_) => const ProfileScreen(),
         createEvent: (context) => const CreateEventScreen(),
         splash: (_) => const SplashScreen(),
         addExpense: (context) => const AddExpenseScreen(),
