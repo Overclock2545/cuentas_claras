@@ -36,8 +36,37 @@ class ExpenseService {
       paidById: expense.paidById,
       paidByName: expense.paidByName,
       createdAt: expense.createdAt,
+      splitType: expense.splitType,
+      splits: expense.splits,
     );
 
     await docRef.set(finalExpense.toMap());
+  }
+
+  /// Actualiza un gasto ya existente. [expense.id] debe ser el ID real del
+  /// documento (el que devolvió Firestore al crearlo con addExpense).
+  static Future<void> updateExpense(ExpenseModel expense) {
+    if (expense.id.isEmpty) {
+      throw Exception('No se puede editar un gasto sin ID.');
+    }
+    return _db
+        .collection('events')
+        .doc(expense.eventId)
+        .collection('expenses')
+        .doc(expense.id)
+        .update(expense.toMap());
+  }
+
+  /// Elimina un gasto del evento.
+  static Future<void> deleteExpense({
+    required String eventId,
+    required String expenseId,
+  }) {
+    return _db
+        .collection('events')
+        .doc(eventId)
+        .collection('expenses')
+        .doc(expenseId)
+        .delete();
   }
 }

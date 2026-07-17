@@ -75,7 +75,7 @@ class ParticipantService {
       name: targetName,
       email: cleanEmail,
       role: 'participante',
-      status: 'pendiente',
+      status: 'pending',
       joinedAt: DateTime.now(),
     );
 

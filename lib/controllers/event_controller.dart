@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../models/event_model.dart';
@@ -11,19 +14,61 @@ class EventController extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isRespondingToInvitation => _isRespondingToInvitation;
 
-  Stream<List<EventModel>> get events => EventService.getEvents().map(
-        (events) {
-          final merged = {for (final event in events) event.id: event};
-          for (final event in _createdEvents) {
-            merged[event.id] = event;
-          }
-          return merged.values.toList()
-            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        },
-      );
-  
-  Stream<List<EventModel>> get pendingInvitations =>
-      EventService.streamPendingInvitations();
+  // ✅ FIX: Antes estos eran getters que llamaban a EventService.getEvents()
+  // cada vez que se accedía a ellos. Como HomeScreen los usa dentro de
+  // build(), cada rebuild (apertura del teclado, notifyListeners, etc.)
+  // creaba una consulta NUEVA de Firestore, tirando la suscripción anterior.
+  // Eso producía el parpadeo/"aparece y desaparece" reportado. Ahora el
+  // stream se crea UNA sola vez (perezosamente) y se reutiliza siempre.
+  Stream<List<EventModel>>? _eventsStream;
+  Stream<List<EventModel>>? _pendingInvitationsStream;
+
+  // ✅ FIX 2: Como EventController es un singleton que vive durante toda la
+  // app (se crea una sola vez en main.dart), el caché de arriba puede quedar
+  // atado al usuario que estaba logueado cuando se creó el stream por
+  // primera vez. Si el usuario cierra sesión y entra con otro (o el mismo)
+  // usuario, ese stream viejo se queda "colgado" sin volver a emitir nunca.
+  // Por eso escuchamos los cambios de sesión y invalidamos el caché cada
+  // vez que el usuario efectivamente cambia (incluyendo logout → login).
+  StreamSubscription<User?>? _authSubscription;
+  String? _lastUid;
+
+  EventController() {
+    _authSubscription =
+        FirebaseAuth.instance.authStateChanges().listen((user) {
+      final uid = user?.uid;
+      if (uid == _lastUid) return;
+      _lastUid = uid;
+      _eventsStream = null;
+      _pendingInvitationsStream = null;
+      _createdEvents.clear();
+      notifyListeners();
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
+  Stream<List<EventModel>> get events {
+    return _eventsStream ??= EventService.getEvents().map(
+      (events) {
+        final merged = {for (final event in events) event.id: event};
+        for (final event in _createdEvents) {
+          merged[event.id] = event;
+        }
+        return merged.values.toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      },
+    ).asBroadcastStream();
+  }
+
+  Stream<List<EventModel>> get pendingInvitations {
+    return _pendingInvitationsStream ??=
+        EventService.streamPendingInvitations().asBroadcastStream();
+  }
 
   Future<void> respondToInvitation(String eventId, bool accept) async {
     try {

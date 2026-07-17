@@ -2,13 +2,49 @@ import 'package:cuentas_claras/utils/color_extensions.dart';
 import 'package:flutter/material.dart';
 
 import '../../config/routes/app_routes.dart';
+import '../../models/debt_model.dart';
 import '../../models/expense_model.dart';
 import '../../models/participant_model.dart';
 import '../../services/expense_service.dart';
 import '../../services/participant_service.dart';
+import '../../utils/balance_calculator.dart';
 
-class EventDetailScreen extends StatelessWidget {
+class EventDetailScreen extends StatefulWidget {
   const EventDetailScreen({super.key});
+
+  @override
+  State<EventDetailScreen> createState() => _EventDetailScreenState();
+}
+
+class _EventDetailScreenState extends State<EventDetailScreen> {
+  // ✅ FIX: antes estos streams se creaban directamente dentro de build()
+  // (stream: ExpenseService.streamExpenses(eventId)), así que cada rebuild
+  // del widget (teclado, animaciones, cualquier setState en un ancestro)
+  // abría una consulta NUEVA a Firestore y tiraba la anterior. Eso hacía
+  // que los participantes "aparecieran un segundo y desaparecieran".
+  // Ahora se crean una sola vez, la primera vez que conocemos el eventId.
+  String? _eventId;
+  late final Stream<List<ExpenseModel>> _expensesStream;
+  late final Stream<List<ParticipantModel>> _participantsStream;
+
+  // ✅ FIX (pestaña Deudas): NO reutilizamos _expensesStream/_participantsStream
+  // aquí. Un mismo Stream de Firestore solo entrega su snapshot inicial al
+  // primer StreamBuilder que se suscribe; un segundo StreamBuilder que se
+  // suscribe al MISMO Stream (como haría la pestaña de Deudas si reutilizara
+  // estos) solo recibe eventos futuros, así que se queda esperando para
+  // siempre si nada cambia en Firestore. Por eso la pestaña de Deudas tiene
+  // sus propias instancias, cada una con su propio listener de Firestore.
+  late final Stream<List<ExpenseModel>> _debtsExpensesStream;
+  late final Stream<List<ParticipantModel>> _debtsParticipantsStream;
+
+  void _ensureStreamsInitialized(String eventId) {
+    if (_eventId == eventId) return;
+    _eventId = eventId;
+    _expensesStream = ExpenseService.streamExpenses(eventId);
+    _participantsStream = ParticipantService.streamParticipants(eventId);
+    _debtsExpensesStream = ExpenseService.streamExpenses(eventId);
+    _debtsParticipantsStream = ParticipantService.streamParticipants(eventId);
+  }
 
   // ✅ FIX 2.3: Cuadro de diálogo mejorado para invitar con mejor feedback de errores
   void _showInviteDialog(BuildContext context, String eventId) {
@@ -150,8 +186,10 @@ class EventDetailScreen extends StatelessWidget {
     final String eventId = args['id'] ?? '';
     final String eventName = args['name'] ?? 'Detalle del Evento';
 
+    _ensureStreamsInitialized(eventId);
+
     return DefaultTabController(
-      length: 2, // Dos pestañas: Gastos y Participantes
+      length: 3, // Tres pestañas: Gastos, Participantes y Deudas
       child: Scaffold(
         appBar: AppBar(
           title: Text(eventName),
@@ -160,6 +198,7 @@ class EventDetailScreen extends StatelessWidget {
             tabs: [
               Tab(icon: Icon(Icons.receipt_long), text: 'Gastos'),
               Tab(icon: Icon(Icons.people_outline), text: 'Participantes'),
+              Tab(icon: Icon(Icons.account_balance_wallet_outlined), text: 'Deudas'),
             ],
           ),
         ),
@@ -167,7 +206,7 @@ class EventDetailScreen extends StatelessWidget {
           children: [
             // PESTAÑA 1: GASTOS
             StreamBuilder<List<ExpenseModel>>(
-              stream: ExpenseService.streamExpenses(eventId),
+              stream: _expensesStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
@@ -194,7 +233,8 @@ class EventDetailScreen extends StatelessWidget {
                       Expanded(
                         child: expenses.isEmpty
                             ? const _EmptyExpensesView()
-                            : _ExpensesList(expenses: expenses),
+                            : _ExpensesList(
+                                expenses: expenses, eventId: eventId),
                       ),
                     ],
                   ),
@@ -204,7 +244,7 @@ class EventDetailScreen extends StatelessWidget {
 
             // PESTAÑA 2: PARTICIPANTES
             StreamBuilder<List<ParticipantModel>>(
-              stream: ParticipantService.streamParticipants(eventId),
+              stream: _participantsStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
@@ -270,6 +310,56 @@ class EventDetailScreen extends StatelessWidget {
                 );
               },
             ),
+
+            // PESTAÑA 3: DEUDAS
+            StreamBuilder<List<ExpenseModel>>(
+              stream: _debtsExpensesStream,
+              builder: (context, expensesSnapshot) {
+                return StreamBuilder<List<ParticipantModel>>(
+                  stream: _debtsParticipantsStream,
+                  builder: (context, participantsSnapshot) {
+                    if (expensesSnapshot.connectionState ==
+                            ConnectionState.waiting ||
+                        participantsSnapshot.connectionState ==
+                            ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    final expenses = expensesSnapshot.data ?? [];
+                    final participants = (participantsSnapshot.data ?? [])
+                        .where((p) => p.status == 'accepted')
+                        .toList();
+
+                    if (expenses.isEmpty || participants.isEmpty) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text(
+                            'Aún no hay gastos registrados para calcular deudas.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      );
+                    }
+
+                    final balances = BalanceCalculator.calculateBalances(
+                      expenses: expenses,
+                      participants: participants,
+                    );
+                    final debts = BalanceCalculator.simplifyDebts(
+                      balances: balances,
+                      participants: participants,
+                    );
+
+                    return _DebtsTab(
+                      participants: participants,
+                      balances: balances,
+                      debts: debts,
+                    );
+                  },
+                );
+              },
+            ),
           ],
         ),
 
@@ -282,6 +372,12 @@ class EventDetailScreen extends StatelessWidget {
               animation: tabController,
               builder: (context, _) {
                 final tabIndex = tabController.index;
+
+                if (tabIndex == 2) {
+                  // Pestaña de Deudas: no hay nada que crear, se calcula solo.
+                  return const SizedBox.shrink();
+                }
+
                 return FloatingActionButton.extended(
                   onPressed: () {
                     // En gastos se registra un gasto; en participantes se envía una invitación.
@@ -289,7 +385,7 @@ class EventDetailScreen extends StatelessWidget {
                       Navigator.pushNamed(
                         context,
                         AppRoutes.addExpense,
-                        arguments: eventId,
+                        arguments: {'eventId': eventId},
                       );
                     } else {
                       _showInviteDialog(context, eventId);
@@ -345,7 +441,19 @@ class _TotalSummaryCard extends StatelessWidget {
 
 class _ExpensesList extends StatelessWidget {
   final List<ExpenseModel> expenses;
-  const _ExpensesList({required this.expenses});
+  final String eventId;
+  const _ExpensesList({required this.expenses, required this.eventId});
+
+  String _splitLabel(ExpenseModel expense) {
+    final count = expense.splits.length;
+    if (count == 0) return 'Sin dividir';
+    final typeLabel = switch (expense.splitType) {
+      ExpenseSplitType.equal => 'partes iguales',
+      ExpenseSplitType.percentage => 'porcentaje',
+      ExpenseSplitType.fixed => 'montos exactos',
+    };
+    return '${expense.category.label} · Dividido entre $count · $typeLabel';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -364,21 +472,147 @@ class _ExpensesList extends StatelessWidget {
                 color: Theme.of(context).dividerColor.withOpacityValue(0.1)),
           ),
           child: ListTile(
+            onTap: () => _showSplitDetail(context, expense),
             leading: CircleAvatar(
               backgroundColor:
                   Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: const Icon(Icons.monetization_on_outlined),
+              child: Icon(expense.category.icon),
             ),
             title: Text(expense.title,
                 style: const TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Text('Pagado por: ${expense.paidByName}'),
-            trailing: Text(
-              'S/ ${expense.amount.toStringAsFixed(2)}',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            subtitle: Text(
+              'Pagado por: ${expense.paidByName}\n${_splitLabel(expense)}',
+            ),
+            isThreeLine: true,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'S/ ${expense.amount.toStringAsFixed(2)}',
+                  style:
+                      const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert),
+                  onSelected: (value) {
+                    if (value == 'edit') {
+                      Navigator.pushNamed(
+                        context,
+                        AppRoutes.addExpense,
+                        arguments: {'eventId': eventId, 'expense': expense},
+                      );
+                    } else if (value == 'delete') {
+                      _confirmDelete(context, expense);
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'edit',
+                      child: ListTile(
+                        leading: Icon(Icons.edit_outlined),
+                        title: Text('Editar'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: ListTile(
+                        leading: Icon(Icons.delete_outline),
+                        title: Text('Eliminar'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         );
       },
+    );
+  }
+
+  void _confirmDelete(BuildContext context, ExpenseModel expense) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Eliminar gasto'),
+        content: Text('¿Seguro que quieres eliminar "${expense.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              try {
+                await ExpenseService.deleteExpense(
+                  eventId: eventId,
+                  expenseId: expense.id,
+                );
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('No se pudo eliminar: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Eliminar',
+                style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSplitDetail(BuildContext context, ExpenseModel expense) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(expense.title),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Total: S/ ${expense.amount.toStringAsFixed(2)}'),
+              Text('Pagado por: ${expense.paidByName}'),
+              Row(
+                children: [
+                  Icon(expense.category.icon, size: 16),
+                  const SizedBox(width: 6),
+                  Text(expense.category.label),
+                ],
+              ),
+              const SizedBox(height: 12),
+              const Text('División:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              if (expense.splits.isEmpty)
+                const Text('Este gasto no tiene división registrada.')
+              else
+                ...expense.splits.map(
+                  (s) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(child: Text(s.participantName)),
+                        Text('S/ ${s.amount.toStringAsFixed(2)}'),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -400,6 +634,114 @@ class _EmptyExpensesView extends StatelessWidget {
                   color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
         ],
       ),
+    );
+  }
+}
+
+/// PESTAÑA 3: muestra el balance individual de cada participante (cuánto
+/// le deben o cuánto debe) y la lista simplificada de pagos que saldarían
+/// todas las deudas del evento con el menor número de transacciones.
+class _DebtsTab extends StatelessWidget {
+  final List<ParticipantModel> participants;
+  final Map<String, double> balances;
+  final List<DebtModel> debts;
+
+  const _DebtsTab({
+    required this.participants,
+    required this.balances,
+    required this.debts,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final namesById = {for (final p in participants) p.id: p.name};
+
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Text(
+          'Balance individual',
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        ...balances.entries.map((entry) {
+          final name = namesById[entry.key] ?? 'Participante';
+          final value = entry.value;
+          final isSettled = value.abs() <= 0.01;
+          final color = isSettled
+              ? Colors.grey
+              : (value > 0 ? Colors.green : Colors.red);
+          final label = isSettled
+              ? 'Está al día'
+              : (value > 0
+                  ? 'Le deben S/ ${value.toStringAsFixed(2)}'
+                  : 'Debe S/ ${value.abs().toStringAsFixed(2)}');
+
+          return Card(
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(
+                  color: Theme.of(context).dividerColor.withOpacityValue(0.1)),
+            ),
+            child: ListTile(
+              leading: CircleAvatar(
+                backgroundColor: color.withOpacityValue(0.1),
+                child: Icon(
+                  isSettled
+                      ? Icons.check
+                      : (value > 0 ? Icons.arrow_downward : Icons.arrow_upward),
+                  color: color,
+                ),
+              ),
+              title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+              trailing: Text(
+                label,
+                style: TextStyle(color: color, fontWeight: FontWeight.bold),
+              ),
+            ),
+          );
+        }),
+        const SizedBox(height: 28),
+        Text(
+          'Cómo saldar cuentas',
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 12),
+        if (debts.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              '¡Todas las cuentas están saldadas! 🎉',
+              style: TextStyle(color: Colors.grey.shade600),
+            ),
+          )
+        else
+          ...debts.map(
+            (debt) => Card(
+              elevation: 0,
+              color: Theme.of(context)
+                  .colorScheme
+                  .primaryContainer
+                  .withOpacityValue(0.3),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: ListTile(
+                leading: const Icon(Icons.sync_alt),
+                title: Text('${debt.fromName} le debe a ${debt.toName}'),
+                trailing: Text(
+                  'S/ ${debt.amount.toStringAsFixed(2)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

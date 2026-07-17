@@ -5,7 +5,7 @@ class ParticipantModel {
   final String name; // Nombre del participante (facilitará pintar la UI rápido)
   final String email; // Correo para validaciones e invitaciones
   final String role; // 'admin' o 'participante'
-  final String status; // 'pendiente', 'aceptado', 'rechazado'
+  final String status; // 'pending' | 'accepted'
   final DateTime joinedAt;
 
   ParticipantModel({
@@ -35,7 +35,7 @@ class ParticipantModel {
       name: map['name'] ?? '',
       email: map['email'] ?? '',
       role: map['role'] ?? 'participante',
-      status: map['status'] ?? 'pendiente',
+      status: map['status'] ?? 'pending',
       joinedAt: joinedAt is Timestamp ? joinedAt.toDate() : DateTime.now(),
     );
   }
