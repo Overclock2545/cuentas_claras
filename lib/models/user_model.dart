@@ -7,6 +7,7 @@ class UserModel {
   final String? photoUrl;
   final DateTime createdAt;
   final String preferredCurrency; // Ej: "PEN", "USD"
+  final String? fcmToken; // Token de Firebase Cloud Messaging
 
   UserModel({
     required this.id,
@@ -15,6 +16,7 @@ class UserModel {
     this.photoUrl,
     required this.createdAt,
     this.preferredCurrency = 'PEN', // Por defecto Soles de Perú
+    this.fcmToken,
   });
 
   // Convertir el objeto a un Map para guardarlo en Cloud Firestore
@@ -26,6 +28,7 @@ class UserModel {
       'photoUrl': photoUrl,
       'createdAt': Timestamp.fromDate(createdAt), // Firestore usa Timestamps
       'preferredCurrency': preferredCurrency,
+      'fcmToken': fcmToken,
     };
   }
 
@@ -39,6 +42,7 @@ class UserModel {
       photoUrl: map['photoUrl'],
       createdAt: createdAt is Timestamp ? createdAt.toDate() : DateTime.now(),
       preferredCurrency: map['preferredCurrency'] ?? 'PEN',
+      fcmToken: map['fcmToken'],
     );
   }
 }

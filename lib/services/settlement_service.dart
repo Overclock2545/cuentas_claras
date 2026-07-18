@@ -25,25 +25,35 @@ class SettlementService {
             .toList());
   }
 
-  /// Registra un nuevo pago entre dos participantes.
-  /// El usuario autenticado será el que paga (fromId).
+  /// Registra un pago entre el usuario autenticado y otro participante.
+  /// Puede registrarlo cualquiera de los dos: [currentUserIsPayer] indica
+  /// si quien registra es quien pagó (true) o quien recibió el pago
+  /// (false, "me pagaron"). Siempre nace en 'pending': la CONTRAPARTE de
+  /// quien registra es quien debe confirmarlo.
   static Future<void> addSettlement({
     required String eventId,
-    required String toId,
-    required String toName,
+    required String otherPartyId,
+    required String otherPartyName,
     required double amount,
+    required bool currentUserIsPayer,
   }) async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('No hay un usuario autenticado.');
 
     if (amount <= 0) throw Exception('El monto debe ser mayor a cero.');
-
-    final fromName = user.displayName ?? 'Participante';
+    if (otherPartyId == user.uid) {
+      throw Exception('Selecciona a otra persona distinta de ti.');
+    }
 
     // Obtenemos el nombre más reciente desde Firestore
-    final userDoc =
-        await _db.collection('users').doc(user.uid).get();
-    final freshName = userDoc.data()?['name'] ?? fromName;
+    final userDoc = await _db.collection('users').doc(user.uid).get();
+    final myName =
+        userDoc.data()?['name'] ?? user.displayName ?? 'Participante';
+
+    final fromId = currentUserIsPayer ? user.uid : otherPartyId;
+    final fromName = currentUserIsPayer ? myName : otherPartyName;
+    final toId = currentUserIsPayer ? otherPartyId : user.uid;
+    final toName = currentUserIsPayer ? otherPartyName : myName;
 
     final docRef = _db
         .collection('events')
@@ -54,19 +64,21 @@ class SettlementService {
     final settlement = SettlementModel(
       id: docRef.id,
       eventId: eventId,
-      fromId: user.uid,
-      fromName: freshName,
+      fromId: fromId,
+      fromName: fromName,
       toId: toId,
       toName: toName,
       amount: amount,
       createdAt: DateTime.now(),
       status: 'pending',
+      registeredBy: user.uid,
     );
 
     await docRef.set(settlement.toMap());
   }
 
-  /// Confirma una liquidación (solo el receptor puede hacerlo).
+  /// Confirma una liquidación pendiente. Debe llamarlo la contraparte de
+  /// quien la registró (lo valida también la regla de Firestore).
   static Future<void> confirmSettlement({
     required String eventId,
     required String settlementId,
@@ -83,7 +95,9 @@ class SettlementService {
     await docRef.update({'status': 'confirmed'});
   }
 
-  /// Elimina una liquidación (solo el creador puede hacerlo).
+  /// Cancela una liquidación mientras siga pendiente. Solo puede hacerlo
+  /// quien la registró — una vez CONFIRMADA por la contraparte, ya no se
+  /// puede borrar unilateralmente (protege el balance de manipulaciones).
   static Future<void> deleteSettlement({
     required String eventId,
     required String settlementId,
@@ -101,7 +115,10 @@ class SettlementService {
     if (!doc.exists) throw Exception('La liquidación ya no existe.');
 
     final data = doc.data() as Map<String, dynamic>;
-    if (data['fromId'] != user.uid) {
+    if (data['status'] == 'confirmed') {
+      throw Exception('No se puede eliminar un pago ya confirmado.');
+    }
+    if (data['registeredBy'] != user.uid) {
       throw Exception('Solo quien registró el pago puede eliminarlo.');
     }
 

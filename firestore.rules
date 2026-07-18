@@ -24,6 +24,14 @@ service cloud.firestore {
       allow list: if signedIn() && resource.data.id == request.auth.uid;
     }
 
+    // Permite el centro de notificaciones: consultar, a través de todos
+    // los eventos, las liquidaciones donde el usuario participa (como
+    // fromId o toId), sin necesitar saber de antemano en qué eventos.
+    match /{path=**}/settlements/{settlementId} {
+      allow list: if signedIn()
+          && (resource.data.fromId == request.auth.uid || resource.data.toId == request.auth.uid);
+    }
+
     match /events/{eventId} {
       allow create: if signedIn() && request.resource.data.creatorId == request.auth.uid;
       allow list: if signedIn();
@@ -52,9 +60,32 @@ service cloud.firestore {
 
       match /settlements/{settlementId} {
         allow read: if isOwner(eventId) || isAcceptedParticipant(eventId);
-        allow create: if isAcceptedParticipant(eventId) && request.resource.data.fromId == request.auth.uid;
-        allow update: if isOwner(eventId) || (signedIn() && request.resource.data.toId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']));
-        allow delete: if isOwner(eventId) || (isAcceptedParticipant(eventId) && resource.data.fromId == request.auth.uid);
+
+        // Cualquiera de los dos involucrados puede registrar el pago,
+        // pero solo a nombre de sí mismo (registeredBy == quien escribe)
+        // y siempre debe nacer 'pending'.
+        allow create: if isAcceptedParticipant(eventId)
+            && request.resource.data.registeredBy == request.auth.uid
+            && (request.resource.data.fromId == request.auth.uid || request.resource.data.toId == request.auth.uid)
+            && request.resource.data.status == 'pending';
+
+        // Solo la CONTRAPARTE de quien registró el pago puede confirmarlo
+        // (así se evita la autoconfirmación), y solo puede tocar 'status'.
+        allow update: if isOwner(eventId) || (
+            signedIn()
+            && resource.data.status == 'pending'
+            && request.auth.uid != resource.data.registeredBy
+            && (resource.data.fromId == request.auth.uid || resource.data.toId == request.auth.uid)
+            && request.resource.data.status == 'confirmed'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']));
+
+        // Solo quien registró el pago puede borrarlo, y solo mientras
+        // siga pendiente: una vez confirmado por la contraparte queda
+        // fijo, para que no se pueda deshacer un acuerdo unilateralmente.
+        allow delete: if isOwner(eventId) || (
+            isAcceptedParticipant(eventId)
+            && resource.data.status == 'pending'
+            && resource.data.registeredBy == request.auth.uid);
       }
     }
   }

@@ -96,11 +96,25 @@ class SettleScreen extends StatelessWidget {
                           color: Colors.green,
                         )
                       else
-                        ...debts.map((debt) => _DebtCard(
-                              debt: debt,
-                              onPay: () => _showPayDialog(
-                                  context, debt, participants),
-                            )),
+                        ...debts.map((debt) {
+                          final currentUserId = authService.currentUser?.uid;
+                          // El botón de pago solo tiene sentido si el
+                          // usuario actual es una de las dos partes de
+                          // esta deuda en particular.
+                          final isPayer = currentUserId == debt.fromId;
+                          final isReceiver = currentUserId == debt.toId;
+                          if (!isPayer && !isReceiver) {
+                            return _DebtCard(debt: debt, onPay: null);
+                          }
+                          return _DebtCard(
+                            debt: debt,
+                            onPay: () => _showPayDialog(
+                              context,
+                              debt,
+                              currentUserIsPayer: isPayer,
+                            ),
+                          );
+                        }),
                       const SizedBox(height: 28),
 
                       // Sección: Balance individual
@@ -151,13 +165,23 @@ class SettleScreen extends StatelessWidget {
 
   void _showPayDialog(
     BuildContext context,
-    DebtModel debt,
-    List<ParticipantModel> participants,
-  ) {
+    DebtModel debt, {
+    required bool currentUserIsPayer,
+  }) {
     final amountController =
         TextEditingController(text: debt.amount.toStringAsFixed(2));
     final formKey = GlobalKey<FormState>();
     bool isPaying = false;
+
+    // Quien no es "yo" en esta deuda: si yo soy el que paga, la contraparte
+    // es quien recibe, y viceversa.
+    final otherPartyId = currentUserIsPayer ? debt.toId : debt.fromId;
+    final otherPartyName = currentUserIsPayer ? debt.toName : debt.fromName;
+    final dialogTitle =
+        currentUserIsPayer ? 'Pagar a ${debt.toName}' : 'Registrar cobro';
+    final dialogDescription = currentUserIsPayer
+        ? 'Vas a registrar que le pagaste a ${debt.toName}.'
+        : 'Vas a registrar que ${debt.fromName} ya te pagó.';
 
     showDialog(
       context: context,
@@ -165,14 +189,14 @@ class SettleScreen extends StatelessWidget {
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
-              title: Text('Pagar a ${debt.toName}'),
+              title: Text(dialogTitle),
               content: Form(
                 key: formKey,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Vas a registrar un pago de ${debt.fromName} a ${debt.toName}.',
+                      dialogDescription,
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 16),
@@ -216,16 +240,17 @@ class SettleScreen extends StatelessWidget {
                           try {
                             await SettlementService.addSettlement(
                               eventId: eventId,
-                              toId: debt.toId,
-                              toName: debt.toName,
+                              otherPartyId: otherPartyId,
+                              otherPartyName: otherPartyName,
                               amount: double.parse(amountController.text.trim()),
+                              currentUserIsPayer: currentUserIsPayer,
                             );
                             if (context.mounted) {
                               Navigator.pop(dialogContext);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                      '✅ Pago registrado. Esperando confirmación de ${debt.toName}.'),
+                                      '✅ Pago registrado. Esperando confirmación de $otherPartyName.'),
                                   backgroundColor: Colors.green.shade600,
                                 ),
                               );
@@ -388,7 +413,7 @@ class _EmptyState extends StatelessWidget {
 
 class _DebtCard extends StatelessWidget {
   final DebtModel debt;
-  final VoidCallback onPay;
+  final VoidCallback? onPay;
 
   const _DebtCard({required this.debt, required this.onPay});
 
@@ -428,17 +453,18 @@ class _DebtCard extends StatelessWidget {
                   style: const TextStyle(
                       fontWeight: FontWeight.bold, fontSize: 16),
                 ),
-                TextButton.icon(
-                  onPressed: onPay,
-                  icon: const Icon(Icons.payments_outlined, size: 16),
-                  label: const Text('Pagar', style: TextStyle(fontSize: 12)),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                if (onPay != null)
+                  TextButton.icon(
+                    onPressed: onPay,
+                    icon: const Icon(Icons.payments_outlined, size: 16),
+                    label: const Text('Pagar', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                   ),
-                ),
               ],
             ),
           ],
@@ -557,24 +583,31 @@ class _SettlementCard extends StatelessWidget {
               style:
                   const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
-            if (isPending && onConfirm != null) ...[
+            // Solo puede confirmar la CONTRAPARTE de quien registró el pago
+            // (nunca quien lo registró, para evitar autoconfirmación).
+            if (isPending &&
+                onConfirm != null &&
+                currentUserId != settlement.registeredBy &&
+                (settlement.fromId == currentUserId ||
+                    settlement.toId == currentUserId)) ...[
               const SizedBox(width: 4),
-              // Solo mostrar botón de confirmar si el usuario actual es el receptor
-              if (settlement.toId == currentUserId)
-                IconButton(
-                  icon: const Icon(Icons.check_circle, color: Colors.green),
-                  tooltip: 'Confirmar pago',
-                  onPressed: onConfirm,
-                ),
+              IconButton(
+                icon: const Icon(Icons.check_circle, color: Colors.green),
+                tooltip: 'Confirmar pago',
+                onPressed: onConfirm,
+              ),
             ],
-            if (isPending && onDelete != null) ...[
-              // Solo mostrar botón de eliminar si el usuario actual es el pagador
-              if (settlement.fromId == currentUserId)
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Colors.grey),
-                  tooltip: 'Eliminar',
-                  onPressed: onDelete,
-                ),
+            // Solo puede eliminarlo quien lo registró, y solo mientras
+            // siga pendiente (una vez confirmado, ya no se puede deshacer
+            // unilateralmente).
+            if (isPending &&
+                onDelete != null &&
+                settlement.registeredBy == currentUserId) ...[
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: Colors.grey),
+                tooltip: 'Eliminar',
+                onPressed: onDelete,
+              ),
             ],
           ],
         ),
@@ -582,4 +615,3 @@ class _SettlementCard extends StatelessWidget {
     );
   }
 }
-

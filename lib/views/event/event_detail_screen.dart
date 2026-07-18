@@ -181,6 +181,19 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         appBar: AppBar(
           title: Text(eventName),
           centerTitle: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.bar_chart_rounded),
+              tooltip: 'Resumen',
+              onPressed: () {
+                Navigator.pushNamed(
+                  context,
+                  AppRoutes.summary,
+                  arguments: {'id': eventId, 'name': eventName},
+                );
+              },
+            ),
+          ],
           bottom: const TabBar(
             tabs: [
               Tab(icon: Icon(Icons.receipt_long), text: 'Gastos'),

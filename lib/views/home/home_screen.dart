@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import '../../config/routes/app_routes.dart';
 import '../../controllers/event_controller.dart';
 import '../../models/event_model.dart';
+import '../../models/settlement_with_event.dart';
 import '../../services/event_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/service_locator.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -18,6 +20,26 @@ class HomeScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Cuentas Claras'),
         actions: [
+          StreamBuilder<List<SettlementWithEvent>>(
+            stream: NotificationService.streamMyPendingSettlements(),
+            builder: (context, snapshot) {
+              final myUid = authService.currentUser?.uid;
+              final pendingForMe = (snapshot.data ?? [])
+                  .where((s) => s.settlement.registeredBy != myUid)
+                  .length;
+
+              return IconButton(
+                icon: Badge(
+                  isLabelVisible: pendingForMe > 0,
+                  label: Text('$pendingForMe'),
+                  child: const Icon(Icons.notifications_outlined),
+                ),
+                tooltip: 'Notificaciones',
+                onPressed: () => Navigator.pushNamed(
+                    context, AppRoutes.notifications),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.person_outline),
             tooltip: 'Mi Perfil',

@@ -8,6 +8,8 @@ import '../../views/splash/splash_screen.dart';
 import '../../views/event/event_detail_screen.dart';
 import '../../views/expense/add_expense_screen.dart';
 import '../../views/profile/profile_screen.dart';
+import '../../views/home/summary_screen.dart';
+import '../../views/notifications/notifications_screen.dart';
 
 class AppRoutes {
   AppRoutes._();
@@ -22,6 +24,7 @@ class AppRoutes {
   static const summary = '/summary';
   static const settle = '/settle';
   static const profile = '/profile';
+  static const notifications = '/notifications';
   static const String createEvent = '/create-event';
   static const String addExpense = '/add-expense';
 
@@ -32,10 +35,11 @@ class AppRoutes {
         home: (_) => const HomeScreen(),
         AppRoutes.eventDetail: (context) => const EventDetailScreen(),
 //        expenses: (_) => const ExpensesScreen(),
-//        summary: (_) => const SummaryScreen(),
+        summary: (_) => const SummaryScreen(),
         profile: (_) => const ProfileScreen(),
         createEvent: (context) => const CreateEventScreen(),
         splash: (_) => const SplashScreen(),
         addExpense: (context) => const AddExpenseScreen(),
+        notifications: (_) => const NotificationsScreen(),
       };
 }

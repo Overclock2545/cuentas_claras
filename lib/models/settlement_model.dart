@@ -4,7 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 ///
 /// [fromId] le pagó [amount] a [toId] para saldar una deuda.
 /// El [status] puede ser 'pending' (pendiente de confirmación) o
-/// 'confirmed' (confirmado por el receptor).
+/// 'confirmed' (confirmado por la contraparte).
+///
+/// [registeredBy] es el UID de quien dejó constancia del pago — puede ser
+/// cualquiera de los dos (fromId o toId). La CONTRAPARTE de registeredBy
+/// es quien debe confirmarlo; así evitamos que alguien registre un pago y
+/// se autoconfirme en el acto.
 class SettlementModel {
   final String id;
   final String eventId;
@@ -15,6 +20,7 @@ class SettlementModel {
   final double amount;
   final DateTime createdAt;
   final String status;
+  final String registeredBy;
 
   const SettlementModel({
     required this.id,
@@ -25,6 +31,7 @@ class SettlementModel {
     required this.toName,
     required this.amount,
     required this.createdAt,
+    required this.registeredBy,
     this.status = 'pending',
   });
 
@@ -38,6 +45,7 @@ class SettlementModel {
     double? amount,
     DateTime? createdAt,
     String? status,
+    String? registeredBy,
   }) {
     return SettlementModel(
       id: id ?? this.id,
@@ -49,6 +57,7 @@ class SettlementModel {
       amount: amount ?? this.amount,
       createdAt: createdAt ?? this.createdAt,
       status: status ?? this.status,
+      registeredBy: registeredBy ?? this.registeredBy,
     );
   }
 
@@ -63,6 +72,7 @@ class SettlementModel {
       'amount': amount,
       'createdAt': Timestamp.fromDate(createdAt),
       'status': status,
+      'registeredBy': registeredBy,
     };
   }
 
@@ -79,6 +89,9 @@ class SettlementModel {
       amount: amount is num ? amount.toDouble() : 0,
       createdAt: createdAt is Timestamp ? createdAt.toDate() : DateTime.now(),
       status: map['status'] ?? 'pending',
+      // Fallback a fromId para no romper documentos viejos creados antes
+      // de este campo (donde siempre era quien pagaba).
+      registeredBy: map['registeredBy'] ?? map['fromId'] ?? '',
     );
   }
 }

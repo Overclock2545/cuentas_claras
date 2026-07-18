@@ -8,6 +8,7 @@ import 'controllers/login_controller.dart';
 import 'controllers/register_controller.dart';
 import 'controllers/event_controller.dart';
 import 'controllers/profile_controller.dart';
+import 'services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,6 +16,9 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Inicializar Firebase Messaging para notificaciones push
+  await NotificationService.initialize();
 
   runApp(buildApp());
 }
