@@ -18,7 +18,13 @@ Future<void> main() async {
   );
 
   // Inicializar Firebase Messaging para notificaciones push
-  await NotificationService.initialize();
+  // En web Firebase Messaging no está soportado de la misma forma,
+  // por eso se captura cualquier error para no bloquear la app.
+  try {
+    await NotificationService.initialize();
+  } catch (e) {
+    debugPrint('⚠️ Firebase Messaging no disponible en esta plataforma: $e');
+  }
 
   runApp(buildApp());
 }

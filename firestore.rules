@@ -45,11 +45,29 @@ service cloud.firestore {
             || isAcceptedParticipant(eventId)
             || (signedIn() && resource.data.id == request.auth.uid);
 
-        allow create: if isOwner(eventId) || (signedIn() && request.resource.data.id == request.auth.uid);
+        // Crear participante directo (admin) o sugerencia (participante aceptado)
+        allow create: if isOwner(eventId)
+            || (signedIn() && request.resource.data.id == request.auth.uid)
+            // Participante aceptado puede sugerir a otro usuario
+            || (isAcceptedParticipant(eventId)
+                && request.resource.data.status == 'suggested'
+                && request.resource.data.suggestedBy == request.auth.uid);
 
-        allow update: if isOwner(eventId) || (signedIn() && participantId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'name']));
+        // Admin puede aprobar (cambiar suggested → pending) o rechazar (delete)
+        // El participante puede cambiar su propio status (aceptar/rechazar invitación)
+        allow update: if isOwner(eventId)
+            || (signedIn() && participantId == request.auth.uid
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'name']))
+            // Admin aprueba sugerencia: cambia a 'pending' y limpia suggestedBy/suggestedByName
+            || (isOwner(eventId)
+                && resource.data.status == 'suggested'
+                && request.resource.data.status == 'pending'
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'suggestedBy', 'suggestedByName']));
 
-        allow delete: if isOwner(eventId) || (signedIn() && resource.data.id == request.auth.uid);
+        // Admin puede eliminar (rechazar sugerencia o remover participante)
+        // El propio usuario puede salirse del evento
+        allow delete: if isOwner(eventId)
+            || (signedIn() && resource.data.id == request.auth.uid);
       }
 
       match /expenses/{expenseId} {

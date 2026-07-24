@@ -1,3 +1,4 @@
+import 'package:cuentas_claras/services/service_locator.dart';
 import 'package:cuentas_claras/utils/color_extensions.dart';
 import 'package:flutter/material.dart';
 
@@ -250,63 +251,86 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final participants = snapshot.data ?? [];
+                final allParticipants = snapshot.data ?? [];
 
-                if (participants.isEmpty) {
+                // Separar sugerencias del resto
+                final suggestions = allParticipants
+                    .where((p) => p.status == 'suggested')
+                    .toList();
+                final regulars = allParticipants
+                    .where((p) => p.status != 'suggested')
+                    .toList();
+
+                if (allParticipants.isEmpty) {
                   return const Center(
                       child: Text('No hay participantes asignados.'));
                 }
 
-                return ListView.separated(
+                final currentUser = authService.currentUser;
+                final isAdmin = regulars.any(
+                    (p) => p.id == currentUser?.uid && p.role == 'admin');
+
+                return ListView(
                   padding: const EdgeInsets.all(20),
-                  itemCount: participants.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) {
-                    final p = participants[index];
-                    return Card(
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                            color: Theme.of(context)
-                                .dividerColor
-                                .withOpacityValue(0.1)),
-                      ),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          child: Text(
-                            p.name.trim().isNotEmpty
-                                ? p.name.trim().substring(0, 1).toUpperCase()
-                                : 'P', // 'P' por defecto si el nombre está vacío
-                          ),
-                        ),
-                        title: Text(p.name,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w600)),
-                        subtitle: Text(p.email),
-                        trailing: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: p.status == 'accepted'
-                                ? Colors.green.withOpacityValue(0.1)
-                                : Colors.orange.withOpacityValue(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            p.status == 'accepted' ? 'Aceptado' : 'Pendiente',
-                            style: TextStyle(
-                              color: p.status == 'accepted'
-                                  ? Colors.green
-                                  : Colors.orange,
-                              fontSize: 12,
+                  children: [
+                    // Sección de sugerencias (solo visible para admin)
+                    if (suggestions.isNotEmpty && isAdmin) ...[
+                      Text(
+                        'Sugerencias de invitación',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(
                               fontWeight: FontWeight.bold,
+                              color: Colors.orange.shade800,
                             ),
-                          ),
+                      ),
+                      const SizedBox(height: 8),
+                      ...suggestions.map((p) => _SuggestionCard(
+                            participant: p,
+                            eventId: eventId,
+                          )),
+                      const Divider(height: 32),
+                    ],
+
+                    // Sugerencias para participantes no-admin (solo informativo)
+                    if (suggestions.isNotEmpty && !isAdmin) ...[
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline,
+                                color: Colors.blue.shade700, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Tienes ${suggestions.length} sugerencia(s) pendiente(s) de revisión por el administrador.',
+                                style: TextStyle(
+                                    color: Colors.blue.shade800, fontSize: 13),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    );
-                  },
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Lista de participantes regulares
+                    Text(
+                      'Participantes (${regulars.length})',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    ...regulars.map((p) => _ParticipantCard(participant: p)),
+                  ],
                 );
               },
             ),
@@ -586,6 +610,156 @@ class _EmptyExpensesView extends StatelessWidget {
               style: TextStyle(
                   color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
         ],
+      ),
+    );
+  }
+}
+
+/// Tarjeta para mostrar una sugerencia de invitación (solo admin puede verla)
+class _SuggestionCard extends StatelessWidget {
+  final ParticipantModel participant;
+  final String eventId;
+
+  const _SuggestionCard({
+    required this.participant,
+    required this.eventId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      color: Colors.orange.shade50,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.orange.shade200),
+      ),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: Colors.orange.shade100,
+          child: const Icon(Icons.person_add_alt, color: Colors.orange),
+        ),
+        title: Text(participant.name,
+            style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(participant.email),
+            Text('Sugerido por: ${participant.suggestedByName ?? "Alguien"}',
+                style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.check_circle, color: Colors.green),
+              tooltip: 'Aprobar sugerencia',
+              onPressed: () => _handleApprove(context),
+            ),
+            IconButton(
+              icon: const Icon(Icons.cancel, color: Colors.red),
+              tooltip: 'Rechazar sugerencia',
+              onPressed: () => _handleReject(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleApprove(BuildContext context) async {
+    try {
+      await ParticipantService.approveSuggestion(
+        eventId: eventId,
+        participantId: participant.id,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Sugerencia aprobada. Se enviará invitación a ${participant.name}.'),
+            backgroundColor: Colors.green.shade600,
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al aprobar: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleReject(BuildContext context) async {
+    try {
+      await ParticipantService.rejectSuggestion(
+        eventId: eventId,
+        participantId: participant.id,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sugerencia rechazada.')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al rechazar: $e')),
+        );
+      }
+    }
+  }
+}
+
+/// Tarjeta para mostrar un participante ya registrado (aceptado o pendiente)
+class _ParticipantCard extends StatelessWidget {
+  final ParticipantModel participant;
+
+  const _ParticipantCard({required this.participant});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+            color: Theme.of(context)
+                .dividerColor
+                .withOpacityValue(0.1)),
+      ),
+      child: ListTile(
+        leading: CircleAvatar(
+          child: Text(
+            participant.name.trim().isNotEmpty
+                ? participant.name.trim().substring(0, 1).toUpperCase()
+                : 'P',
+          ),
+        ),
+        title: Text(participant.name,
+            style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text(participant.email),
+        trailing: Container(
+          padding: const EdgeInsets.symmetric(
+              horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: participant.status == 'accepted'
+                ? Colors.green.withOpacityValue(0.1)
+                : Colors.orange.withOpacityValue(0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            participant.status == 'accepted' ? 'Aceptado' : 'Pendiente',
+            style: TextStyle(
+              color: participant.status == 'accepted'
+                  ? Colors.green
+                  : Colors.orange,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
       ),
     );
   }
